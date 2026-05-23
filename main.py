@@ -1,6 +1,6 @@
 from flask import Flask, request, abort
-from linebot.v3.messaging import (Configuration, ApiClient, MessagingApi, 
-    ReplyMessageRequest, TextMessage)
+from linebot.v3.messaging import (Configuration, ApiClient, MessagingApi,
+    ReplyMessageRequest, TextMessage, ImageMessage)
 from linebot.v3.webhooks import MessageEvent, TextMessageContent, ImageMessageContent
 from linebot.v3.webhook import WebhookHandler
 from linebot.v3.exceptions import InvalidSignatureError
@@ -37,6 +37,10 @@ def search_web(query):
     except:
         return "ค้นหาไม่สำเร็จครับ"
 
+def get_random_image():
+    num = __import__('random').randint(1, 1000)
+    return f"https://picsum.photos/id/{num}/800/600"
+
 @app.route("/webhook", methods=["POST"])
 def webhook():
     signature = request.headers["X-Line-Signature"]
@@ -71,30 +75,68 @@ def handle_message(event):
         result = search_web(query)
         user_msg = f"ค้นหาข้อมูลเรื่อง '{query}' ได้ผลดังนี้: {result} กรุณาสรุปให้ฟังหน่อยครับ"
 
-    memory[user_id].append({"role": "user", "content": user_msg})
+        memory[user_id].append({"role": "user", "content": user_msg})
+        if len(memory[user_id]) > 20:
+            memory[user_id] = [memory[user_id][0]] + memory[user_id][-19:]
 
-    if len(memory[user_id]) > 20:
-        memory[user_id] = [memory[user_id][0]] + memory[user_id][-19:]
-
-    try:
-        response = groq_client.chat.completions.create(
-            model="llama-3.1-8b-instant",
-            messages=memory[user_id]
-        )
-        reply = response.choices[0].message.content
-        memory[user_id].append({"role": "assistant", "content": reply})
-    except Exception as e:
-        print(f"GROQ ERROR: {e}")
-        reply = "ขอโทษครับ ระบบขัดข้องลองใหม่อีกทีนะครับ 🙏"
-
-    with ApiClient(configuration) as api_client:
-        line_bot_api = MessagingApi(api_client)
-        line_bot_api.reply_message_with_http_info(
-            ReplyMessageRequest(
-                reply_token=event.reply_token,
-                messages=[TextMessage(text=reply)]
+        try:
+            response = groq_client.chat.completions.create(
+                model="llama-3.1-8b-instant",
+                messages=memory[user_id]
             )
-        )
+            reply = response.choices[0].message.content
+            memory[user_id].append({"role": "assistant", "content": reply})
+        except Exception as e:
+            print(f"GROQ ERROR: {e}")
+            reply = "ขอโทษครับ ระบบขัดข้องลองใหม่อีกทีนะครับ 🙏"
+
+        with ApiClient(configuration) as api_client:
+            line_bot_api = MessagingApi(api_client)
+            line_bot_api.reply_message_with_http_info(
+                ReplyMessageRequest(
+                    reply_token=event.reply_token,
+                    messages=[TextMessage(text=reply)]
+                )
+            )
+
+    elif "ส่งรูป" in user_msg or "รูปภาพ" in user_msg:
+        img_url = get_random_image()
+        with ApiClient(configuration) as api_client:
+            line_bot_api = MessagingApi(api_client)
+            line_bot_api.reply_message_with_http_info(
+                ReplyMessageRequest(
+                    reply_token=event.reply_token,
+                    messages=[ImageMessage(
+                        original_content_url=img_url,
+                        preview_image_url=img_url
+                    )]
+                )
+            )
+
+    else:
+        memory[user_id].append({"role": "user", "content": user_msg})
+        if len(memory[user_id]) > 20:
+            memory[user_id] = [memory[user_id][0]] + memory[user_id][-19:]
+
+        try:
+            response = groq_client.chat.completions.create(
+                model="llama-3.1-8b-instant",
+                messages=memory[user_id]
+            )
+            reply = response.choices[0].message.content
+            memory[user_id].append({"role": "assistant", "content": reply})
+        except Exception as e:
+            print(f"GROQ ERROR: {e}")
+            reply = "ขอโทษครับ ระบบขัดข้องลองใหม่อีกทีนะครับ 🙏"
+
+        with ApiClient(configuration) as api_client:
+            line_bot_api = MessagingApi(api_client)
+            line_bot_api.reply_message_with_http_info(
+                ReplyMessageRequest(
+                    reply_token=event.reply_token,
+                    messages=[TextMessage(text=reply)]
+                )
+            )
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
