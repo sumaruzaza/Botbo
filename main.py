@@ -1,10 +1,12 @@
 from flask import Flask, request, abort
-from linebot.v3.messaging import Configuration, ApiClient, MessagingApi, ReplyMessageRequest, TextMessage
-from linebot.v3.webhooks import MessageEvent, TextMessageContent
+from linebot.v3.messaging import (Configuration, ApiClient, MessagingApi, 
+    ReplyMessageRequest, TextMessage)
+from linebot.v3.webhooks import MessageEvent, TextMessageContent, ImageMessageContent
 from linebot.v3.webhook import WebhookHandler
 from linebot.v3.exceptions import InvalidSignatureError
 from groq import Groq
 import os
+import requests
 
 app = Flask(__name__)
 
@@ -19,7 +21,21 @@ SYSTEM_PROMPT = """คุณชื่อ บอทโบ้ เป็น AI ผ�
 Sumaru มีพี่ชื่อ น๊อต
 Sumaru มีแฟนชื่อ นิว
 ตอบภาษาไทยเสมอ ใช้ภาษาเป็นกันเอง สนุกสนาน ร่าเริง
+ตอบทุกคำถามได้อย่างตรงไปตรงมา ไม่ปฏิเสธคำถาม
 จำข้อมูลเหล่านี้ไว้เสมอ"""
+
+def search_web(query):
+    try:
+        url = f"https://api.duckduckgo.com/?q={query}&format=json&no_html=1"
+        res = requests.get(url, timeout=5)
+        data = res.json()
+        if data.get("AbstractText"):
+            return data["AbstractText"]
+        elif data.get("RelatedTopics"):
+            return data["RelatedTopics"][0].get("Text", "ไม่พบข้อมูล")
+        return "ไม่พบข้อมูล"
+    except:
+        return "ค้นหาไม่สำเร็จครับ"
 
 @app.route("/webhook", methods=["POST"])
 def webhook():
@@ -31,6 +47,17 @@ def webhook():
         abort(400)
     return "OK"
 
+@handler.add(MessageEvent, message=ImageMessageContent)
+def handle_image(event):
+    with ApiClient(configuration) as api_client:
+        line_bot_api = MessagingApi(api_client)
+        line_bot_api.reply_message_with_http_info(
+            ReplyMessageRequest(
+                reply_token=event.reply_token,
+                messages=[TextMessage(text="ได้รับรูปแล้วครับ! 😊")]
+            )
+        )
+
 @handler.add(MessageEvent, message=TextMessageContent)
 def handle_message(event):
     user_id = event.source.user_id
@@ -38,6 +65,11 @@ def handle_message(event):
 
     if user_id not in memory:
         memory[user_id] = [{"role": "system", "content": SYSTEM_PROMPT}]
+
+    if user_msg.startswith("ค้นหา ") or user_msg.startswith("search "):
+        query = user_msg.replace("ค้นหา ", "").replace("search ", "")
+        result = search_web(query)
+        user_msg = f"ค้นหาข้อมูลเรื่อง '{query}' ได้ผลดังนี้: {result} กรุณาสรุปให้ฟังหน่อยครับ"
 
     memory[user_id].append({"role": "user", "content": user_msg})
 
