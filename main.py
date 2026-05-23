@@ -12,6 +12,15 @@ configuration = Configuration(access_token=os.environ.get("LINE_TOKEN"))
 handler = WebhookHandler(os.environ.get("LINE_SECRET"))
 groq_client = Groq(api_key=os.environ.get("GROQ_KEY"))
 
+memory = {}
+
+SYSTEM_PROMPT = """คุณชื่อ บอทโบ้ เป็น AI ผู้ช่วยสุดน่ารักและสนุกสนาน
+เจ้าของคือ Sumaru คนไทย
+Sumaru มีพี่ชื่อ น๊อต
+Sumaru มีแฟนชื่อ นิว
+ตอบภาษาไทยเสมอ ใช้ภาษาเป็นกันเอง สนุกสนาน ร่าเริง
+จำข้อมูลเหล่านี้ไว้เสมอ"""
+
 @app.route("/webhook", methods=["POST"])
 def webhook():
     signature = request.headers["X-Line-Signature"]
@@ -24,13 +33,24 @@ def webhook():
 
 @handler.add(MessageEvent, message=TextMessageContent)
 def handle_message(event):
+    user_id = event.source.user_id
     user_msg = event.message.text
+
+    if user_id not in memory:
+        memory[user_id] = [{"role": "system", "content": SYSTEM_PROMPT}]
+
+    memory[user_id].append({"role": "user", "content": user_msg})
+
+    if len(memory[user_id]) > 20:
+        memory[user_id] = [memory[user_id][0]] + memory[user_id][-19:]
+
     try:
         response = groq_client.chat.completions.create(
             model="llama-3.1-8b-instant",
-            messages=[{"role": "user", "content": user_msg}]
+            messages=memory[user_id]
         )
         reply = response.choices[0].message.content
+        memory[user_id].append({"role": "assistant", "content": reply})
     except Exception as e:
         print(f"GROQ ERROR: {e}")
         reply = "ขอโทษครับ ระบบขัดข้องลองใหม่อีกทีนะครับ 🙏"
