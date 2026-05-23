@@ -27,7 +27,7 @@ def handle_message(event):
     user_msg = event.message.text
     try:
         response = groq_client.chat.completions.create(
-            model="llama3-8b-8192",
+            model="llama-3.1-8b-instant",
             messages=[{"role": "user", "content": user_msg}]
         )
         reply = response.choices[0].message.content
