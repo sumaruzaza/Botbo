@@ -1,17 +1,16 @@
 from flask import Flask, request, abort
-import google.generativeai as genai
 from linebot.v3.messaging import Configuration, ApiClient, MessagingApi, ReplyMessageRequest, TextMessage
 from linebot.v3.webhooks import MessageEvent, TextMessageContent
 from linebot.v3.webhook import WebhookHandler
 from linebot.v3.exceptions import InvalidSignatureError
+from groq import Groq
 import os
 
 app = Flask(__name__)
 
 configuration = Configuration(access_token=os.environ.get("LINE_TOKEN"))
 handler = WebhookHandler(os.environ.get("LINE_SECRET"))
-genai.configure(api_key=os.environ.get("GEMINI_KEY"))
-model = genai.GenerativeModel("gemini-2.0-flash")
+groq_client = Groq(api_key=os.environ.get("GROQ_KEY"))
 
 @app.route("/webhook", methods=["POST"])
 def webhook():
@@ -26,8 +25,15 @@ def webhook():
 @handler.add(MessageEvent, message=TextMessageContent)
 def handle_message(event):
     user_msg = event.message.text
-    response = model.generate_content(user_msg)
-    reply = response.text
+    try:
+        response = groq_client.chat.completions.create(
+            model="llama3-8b-8192",
+            messages=[{"role": "user", "content": user_msg}]
+        )
+        reply = response.choices[0].message.content
+    except Exception as e:
+        reply = "ขอโทษครับ ระบบขัดข้องลองใหม่อีกทีนะครับ 🙏"
+
     with ApiClient(configuration) as api_client:
         line_bot_api = MessagingApi(api_client)
         line_bot_api.reply_message_with_http_info(
@@ -39,4 +45,3 @@ def handle_message(event):
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
-
