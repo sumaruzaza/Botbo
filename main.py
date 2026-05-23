@@ -32,6 +32,7 @@ def handle_message(event):
         )
         reply = response.choices[0].message.content
     except Exception as e:
+        print(f"GROQ ERROR: {e}")
         reply = "ขอโทษครับ ระบบขัดข้องลองใหม่อีกทีนะครับ 🙏"
 
     with ApiClient(configuration) as api_client:
